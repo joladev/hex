@@ -84,13 +84,14 @@ defmodule Mix.Tasks.Hex.Package do
     {opts, args} = Hex.OptionParser.parse!(args, strict: @switches, aliases: @aliases)
     unpack = Keyword.get(opts, :unpack, false)
     output = Keyword.get(opts, :output, nil)
+    web = Keyword.get(opts, :web, nil)
 
     case args do
       ["fetch", package, version] ->
         fetch(repo(opts), package, version, unpack, output)
 
       ["diff", package, version_range] ->
-        diff(repo(opts), package, version_range)
+        diff(repo(opts), package, version_range, web)
 
       _ ->
         Mix.raise("""
@@ -191,7 +192,7 @@ defmodule Mix.Tasks.Hex.Package do
     end
   end
 
-  defp diff(repo, package, version_range) do
+  def diff(repo, package, version_range, nil) do
     Hex.Registry.Server.open()
     Hex.Registry.Server.prefetch([{repo, package}])
 
@@ -227,6 +228,37 @@ defmodule Mix.Tasks.Hex.Package do
     after
       File.rm_rf!(path1)
       File.rm_rf!(path2)
+    end
+  end
+
+  def diff(_repo, package, version_range, _web) do
+    {version1, version2} = parse_version_range!(version_range)
+    url = "https://diff.hex.pm/diff/#{package}/#{version1}/#{version2}"
+
+    browser_open(url)
+  end
+
+  defp browser_open(path) do
+    path
+    |> open_cmd()
+    |> system_cmd()
+  end
+
+  defp open_cmd(path) do
+    case :os.type() do
+      {:win32, _} -> {"cmd", ["/c", "start", path]}
+      {:unix, :darwin} -> {"open", [path]}
+      {:unix, _} -> {"xdg-open", [path]}
+    end
+  end
+
+  if Mix.env() == :test do
+    defp system_cmd({cmd, args}) do
+      send(self(), {:hex_system_cmd, cmd, args})
+    end
+  else
+    defp system_cmd({cmd, args}) do
+      System.cmd(cmd, args)
     end
   end
 
